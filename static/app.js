@@ -27,6 +27,33 @@ const editArea = document.getElementById('editArea');
 const editTarget = document.getElementById('editTarget');
 const closeEdit = document.getElementById('closeEdit');
 const saveEdit = document.getElementById('saveEdit');
+const errorState = { timer: null };
+
+function ensureBanner(){
+  let bar = document.getElementById('errorBanner');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'errorBanner';
+    bar.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:3000;padding:10px 16px;border-radius:16px;background:rgba(255,99,71,0.15);border:1px solid rgba(255,99,71,0.5);color:#fff;backdrop-filter:blur(6px);box-shadow:0 10px 30px rgba(0,0,0,.35);display:none;max-width:90vw;text-align:center;font-weight:800;';
+    document.body.appendChild(bar);
+  }
+  return bar;
+}
+
+function showError(msg){
+  console.error(msg);
+  const bar = ensureBanner();
+  bar.textContent = msg;
+  bar.style.display = 'block';
+  clearTimeout(errorState.timer);
+  errorState.timer = setTimeout(()=>bar.style.display='none', 5000);
+}
+
+function hideError(){
+  const bar = document.getElementById('errorBanner');
+  if(bar) bar.style.display = 'none';
+  clearTimeout(errorState.timer);
+}
 
 function apiHeaders(json=true){
   const h = {};
@@ -36,9 +63,16 @@ function apiHeaders(json=true){
 }
 
 async function fetchJSON(url, opts={}){
-  const res = await fetch(url, opts);
-  if(!res.ok) throw new Error(await res.text());
-  return res.json();
+  try{
+    const res = await fetch(url, opts);
+    if(!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    const data = await res.json();
+    hideError();
+    return data;
+  }catch(err){
+    showError(`API error: ${url}`);
+    throw err;
+  }
 }
 
 function setUserInfo(){
@@ -75,7 +109,7 @@ loginForm.addEventListener('submit', async (e)=>{
     localStorage.setItem('user', JSON.stringify(state.user));
     loginModal.classList.remove('open');
     setUserInfo();
-  }catch(err){alert('Ошибка входа');}
+  }catch(err){showError('Ошибка входа');}
 });
 
 loginModal.addEventListener('click', (e)=>{ if(e.target===loginModal) loginModal.classList.remove('open'); });
@@ -84,23 +118,32 @@ function esc(str){return (str||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;'
 function dot(status){ if(status==='ok') return 'good'; if(status==='warn') return 'warn'; if(status==='bad') return 'bad'; return ''; }
 
 async function loadTree(){
-  const data = await fetchJSON('/api/tree');
-  state.tree = data;
-  state.companies = data.companies;
-  state.currentCompany = state.currentCompany || data.companies[0];
-  state.currentDc = state.currentCompany.dcs[0];
-  renderCompanySwitcher();
-  renderTree();
+  try{
+    const data = await fetchJSON('/api/tree');
+    state.tree = data;
+    state.companies = data.companies || [];
+    state.currentCompany = state.currentCompany || state.companies[0] || null;
+    state.currentDc = state.currentCompany?.dcs?.[0] || null;
+    renderCompanySwitcher();
+    renderTree();
+  }catch(err){
+    state.tree = {companies: []};
+    state.companies = [];
+    state.currentCompany = null;
+    state.currentDc = null;
+    renderCompanySwitcher();
+    renderTree();
+  }
 }
 
 function renderCompanySwitcher(){
   companyNameEl.textContent = state.currentCompany?.name || '—';
-  companyMenuList.innerHTML = state.companies.map(c=>`<div class="menuItem ${c.id===state.currentCompany.id?'active':''}" data-id="${c.id}"><div class="menuDot"></div><div class="mName">${esc(c.name)}</div><div class="mMeta">DC: ${c.dcs[0]?.name||''}</div></div>`).join('');
+  companyMenuList.innerHTML = state.companies.map(c=>`<div class="menuItem ${state.currentCompany && c.id===state.currentCompany.id?'active':''}" data-id="${c.id}"><div class="menuDot"></div><div class="mName">${esc(c.name)}</div><div class="mMeta">DC: ${c.dcs?.[0]?.name||''}</div></div>`).join('');
   companyMenuList.querySelectorAll('.menuItem').forEach(el=>{
     el.onclick=()=>{
       const id=Number(el.dataset.id);
       state.currentCompany = state.companies.find(c=>c.id===id);
-      state.currentDc = state.currentCompany.dcs[0];
+      state.currentDc = state.currentCompany?.dcs?.[0] || null;
       closeMenu();
       renderCompanySwitcher();
       renderTree();
@@ -118,6 +161,10 @@ document.addEventListener('click',(e)=>{ if(!switcherMenu.contains(e.target) && 
 
 function renderTree(filter=''){
   const dc = state.currentDc;
+  if(!dc){
+    treeEl.innerHTML = '<div class="card">Нет данных (ожидаем API)</div>';
+    return;
+  }
   const f = filter.toLowerCase();
   const filterFn = (n)=>!f || `${n.name} ${n.ip||''}`.toLowerCase().includes(f);
   const renderGroup=(label,icon,key,items)=>{
@@ -129,14 +176,18 @@ function renderTree(filter=''){
   treeEl.querySelectorAll('.node[data-open]').forEach(el=>{el.onclick=()=>{const id=el.dataset.open; if(id==='dashboard'){navigate('/'); return;} navigate(`/object/${id}`);};});
 }
 
-searchInput.addEventListener('input',()=>{renderTree(searchInput.value);});
+  searchInput.addEventListener('input',()=>{renderTree(searchInput.value);});
 
 function markdownToHtml(md){return DOMPurify.sanitize(marked.parse(md||''));}
 
 async function loadObject(id){
-  const data = await fetchJSON(`/api/objects/${id}`);
-  state.currentObjectId = id;
-  renderObjectPage(data);
+  try{
+    const data = await fetchJSON(`/api/objects/${id}`);
+    state.currentObjectId = id;
+    renderObjectPage(data);
+  }catch(err){
+    pageEl.innerHTML = '<div class="card">Не удалось загрузить объект</div>';
+  }
 }
 
 function renderTabs(tabs){
@@ -167,27 +218,29 @@ function renderObjectPage(detail){
   renderTabs();
   pageEl.querySelectorAll('[data-edit]').forEach(btn=>{btn.onclick=()=>openEdit(detail.pages.find(p=>p.id==btn.dataset.edit));});
   pageEl.querySelectorAll('.item[data-open]').forEach(el=>{el.onclick=()=>navigate(`/object/${el.dataset.open}`);});
-  const docForm = document.getElementById('docForm');
-  if(docForm){docForm.onsubmit=async(e)=>{e.preventDefault(); if(!state.token){alert('Нужен логин'); return;} const fd=new FormData(docForm); try{const res=await fetch(`/api/objects/${obj.id}/documents`,{method:'POST',headers: state.token?{'Authorization':'Bearer '+state.token}:undefined,body:fd}); if(!res.ok) throw new Error(); await loadObject(obj.id);}catch(err){alert('Ошибка загрузки');}};}
-}
+      const docForm = document.getElementById('docForm');
+    if(docForm){docForm.onsubmit=async(e)=>{e.preventDefault(); if(!state.token){showError('Нужен логин'); return;} const fd=new FormData(docForm); try{const res=await fetch(`/api/objects/${obj.id}/documents`,{method:'POST',headers: state.token?{'Authorization':'Bearer '+state.token}:undefined,body:fd}); if(!res.ok) throw new Error(); await loadObject(obj.id);}catch(err){showError('Ошибка загрузки документа');}};}
+  }
 
 function canEdit(){return state.user && (state.user.role==='admin' || state.user.role==='editor');}
 
 function openEdit(page){if(!page){alert('Страница не найдена'); return;} editTarget.textContent = `Секция: ${page.section}`; editArea.value = page.content_md; editModal.dataset.pageId = page.id; editModal.classList.add('open');}
 closeEdit.onclick=()=>editModal.classList.remove('open');
 editModal.addEventListener('click',(e)=>{if(e.target===editModal) editModal.classList.remove('open');});
-saveEdit.onclick=async ()=>{
+  saveEdit.onclick=async ()=>{
   const id = editModal.dataset.pageId;
   try{
     const res = await fetch(`/api/pages/${id}`,{method:'PUT',headers: apiHeaders(),body: JSON.stringify({content_md: editArea.value})});
     if(!res.ok) throw new Error();
     editModal.classList.remove('open');
     if(state.currentObjectId) await loadObject(state.currentObjectId);
-  }catch(err){alert('Не удалось сохранить');}
-};
+  }catch(err){showError('Не удалось сохранить');}
+  };
 
 function renderDashboard(){
-  pageEl.innerHTML = `<div class="crumbs"><span>🏠 Главная</span></div><div class="pageHead"><div class="pageTitle"><h1>${esc(state.currentCompany.name)}</h1><div class="badges"><div class="badge">ЦОД: ${esc(state.currentDc.name)}</div><div class="badge">Объекты: ${state.currentDc.services.length+state.currentDc.servers.length+state.currentDc.network.length}</div></div></div><div class="actions"><button class="btn primary" onclick="navigate('/object/${state.currentDc.services[0]?.id||''}')">Открыть сервис</button></div></div><div class="grid"><div class="card"><h3>Модель</h3><p>Компания → ЦОД → Объекты. Разделы страниц: обзор, связи, архитектура, сеть, аварии, документы.</p></div><div class="card"><h3>Недавние изменения</h3><p class="pillBadge">Данные из БД</p></div></div>`;
+  const comp = state.currentCompany || {name:'—', dcs:[{name:'—', services:[], servers:[], network:[]}]} ;
+  const dc = state.currentDc || comp.dcs?.[0] || {name:'—', services:[], servers:[], network:[]};
+  pageEl.innerHTML = `<div class="crumbs"><span>🏠 Главная</span></div><div class="pageHead"><div class="pageTitle"><h1>${esc(comp.name)}</h1><div class="badges"><div class="badge">ЦОД: ${esc(dc.name)}</div><div class="badge">Объекты: ${(dc.services?.length||0)+(dc.servers?.length||0)+(dc.network?.length||0)}</div></div></div><div class="actions"><button class="btn primary" onclick="navigate('/object/${dc.services?.[0]?.id||''}')">Открыть сервис</button></div></div><div class="grid"><div class="card"><h3>Модель</h3><p>Компания → ЦОД → Объекты. Разделы страниц: обзор, связи, архитектура, сеть, аварии, документы.</p></div><div class="card"><h3>Недавние изменения</h3><p class="pillBadge">Данные из БД</p></div></div>`;
 }
 
 function navigate(path){
@@ -213,9 +266,20 @@ function highlight(id){
   const node = treeEl.querySelector(`.node[data-open="${id}"]`);
   if(node){node.classList.add('active'); let p=node.parentElement; while(p && p!==treeEl){if(p.classList.contains('children')) p.classList.add('open'); p=p.parentElement;} node.scrollIntoView({block:'nearest'});} else {renderTree(''); highlight(id);} }
 
+window.addEventListener('error', (event)=>{showError(`Runtime error: ${event.message}`);});
+window.addEventListener('unhandledrejection', (event)=>{
+  const reason = event.reason?.message || event.reason || 'unknown';
+  showError(`Unhandled promise: ${reason}`);
+});
+
 window.addEventListener('DOMContentLoaded', async ()=>{
   setUserInfo();
-  try{await loadTree(); router();}catch(err){pageEl.innerHTML='<div class="card">Ошибка загрузки API</div>';}
+  try{
+    await loadTree();
+  }catch(err){
+    pageEl.innerHTML='<div class="card">Ошибка загрузки API</div>';
+  }
+  router();
 });
 
 window.navigate=navigate;

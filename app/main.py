@@ -33,6 +33,11 @@ def current_user(user: models.User = Depends(get_current_user)):
     return user
 
 
+@app.get("/api/companies", response_model=list[schemas.CompanyOut])
+def list_companies(db: Session = Depends(get_db)):
+    return crud.list_companies(db)
+
+
 @app.get("/api/tree", response_model=schemas.TreeResponse)
 def tree(db: Session = Depends(get_db)):
     return crud.get_tree(db)

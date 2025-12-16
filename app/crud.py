@@ -36,6 +36,10 @@ def get_tree(db: Session) -> schemas.TreeResponse:
     return schemas.TreeResponse(companies=companies_resp)
 
 
+def list_companies(db: Session) -> list[models.Company]:
+    return db.execute(select(models.Company)).scalars().all()
+
+
 def get_object_detail(db: Session, object_id: int) -> schemas.ObjectDetail | None:
     obj = db.get(models.Object, object_id)
     if not obj:

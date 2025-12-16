@@ -10,10 +10,8 @@ from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
 from .auth import login_for_access_token, get_current_user, require_role
-from .db import Base, engine, get_db
+from .db import get_db
 from .settings import settings
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="IT Docs")
 app.add_middleware(

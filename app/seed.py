@@ -7,10 +7,15 @@ from .auth import get_password_hash
 
 
 def create_user(db: Session, username: str, password: str, role: models.Role, full_name: str):
-    if db.query(models.User).filter_by(username=username).first():
-        return
-    user = models.User(username=username, hashed_password=get_password_hash(password), role=role, full_name=full_name)
-    db.add(user)
+    user = db.query(models.User).filter_by(username=username).first()
+    hashed = get_password_hash(password)
+    if user:
+        user.role = role
+        user.full_name = full_name
+        user.hashed_password = hashed
+    else:
+        user = models.User(username=username, hashed_password=hashed, role=role, full_name=full_name)
+        db.add(user)
     db.commit()
 
 

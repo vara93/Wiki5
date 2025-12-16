@@ -1,7 +1,13 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, ConfigDict
+
 from .models import Role, ObjectType, PageSection, DocumentKind
+
+
+class ORMBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
@@ -23,30 +29,21 @@ class UserCreate(UserBase):
     password: str
 
 
-class UserOut(UserBase):
+class UserOut(UserBase, ORMBase):
     id: int
 
-    class Config:
-        orm_mode = True
 
-
-class CompanyOut(BaseModel):
+class CompanyOut(ORMBase):
     id: int
     name: str
 
-    class Config:
-        orm_mode = True
 
-
-class DatacenterOut(BaseModel):
+class DatacenterOut(ORMBase):
     id: int
     name: str
 
-    class Config:
-        orm_mode = True
 
-
-class ObjectOut(BaseModel):
+class ObjectOut(ORMBase):
     id: int
     dc_id: int
     type: ObjectType
@@ -57,37 +54,28 @@ class ObjectOut(BaseModel):
     tags: Optional[str]
     description: Optional[str]
 
-    class Config:
-        orm_mode = True
 
-
-class PageOut(BaseModel):
+class PageOut(ORMBase):
     id: int
     section: PageSection
     content_md: str
     updated_at: datetime
     updated_by: Optional[int]
 
-    class Config:
-        orm_mode = True
-
 
 class PageUpdate(BaseModel):
     content_md: str
 
 
-class RelationOut(BaseModel):
+class RelationOut(ORMBase):
     id: int
     relation_type: str
     note: str
     src_object_id: int
     dst_object_id: int
 
-    class Config:
-        orm_mode = True
 
-
-class DocumentOut(BaseModel):
+class DocumentOut(ORMBase):
     id: int
     object_id: int
     title: str
@@ -96,9 +84,6 @@ class DocumentOut(BaseModel):
     kind: DocumentKind
     uploaded_at: datetime
 
-    class Config:
-        orm_mode = True
-
 
 class DocumentCreate(BaseModel):
     title: str
@@ -106,7 +91,7 @@ class DocumentCreate(BaseModel):
     kind: DocumentKind = DocumentKind.link
 
 
-class IncidentOut(BaseModel):
+class IncidentOut(ORMBase):
     id: int
     object_id: int
     title: str
@@ -116,9 +101,6 @@ class IncidentOut(BaseModel):
     check: str
     resolution: str
     created_at: datetime
-
-    class Config:
-        orm_mode = True
 
 
 class ObjectDetail(BaseModel):
